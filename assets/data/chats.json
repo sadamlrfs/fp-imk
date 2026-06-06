@@ -1,0 +1,105 @@
+[
+  {
+    "id": "c1",
+    "type": "personal",
+    "participantIds": ["u1"],
+    "lastMessage": "Hello! How are you today?",
+    "lastMessageType": "text",
+    "time": "09.41",
+    "unread": 2
+  },
+  {
+    "id": "c2",
+    "type": "personal",
+    "participantIds": ["u2"],
+    "lastMessage": "Can we schedule a meeting?",
+    "lastMessageType": "text",
+    "time": "08.15",
+    "unread": 0
+  },
+  {
+    "id": "c3",
+    "type": "personal",
+    "participantIds": ["u3"],
+    "lastMessage": "See you tomorrow!",
+    "lastMessageType": "text",
+    "time": "Kemarin",
+    "unread": 0
+  },
+  {
+    "id": "c4",
+    "type": "personal",
+    "participantIds": ["u4"],
+    "lastMessage": "Thanks for your help!",
+    "lastMessageType": "text",
+    "time": "Sen",
+    "unread": 1
+  },
+  {
+    "id": "c5",
+    "type": "personal",
+    "participantIds": ["u5"],
+    "lastMessage": "Got it, talk later.",
+    "lastMessageType": "text",
+    "time": "Min",
+    "unread": 0
+  },
+  {
+    "id": "c6",
+    "type": "personal",
+    "participantIds": ["u6"],
+    "lastMessage": "Let me check on that.",
+    "lastMessageType": "text",
+    "time": "Sab",
+    "unread": 3
+  },
+  {
+    "id": "c7",
+    "type": "personal",
+    "participantIds": ["u7"],
+    "lastMessage": "I'll be there at 3.",
+    "lastMessageType": "text",
+    "time": "Jum",
+    "unread": 0
+  },
+  {
+    "id": "c8",
+    "type": "personal",
+    "participantIds": ["u8"],
+    "lastMessage": "Oke siap, makasih!",
+    "lastMessageType": "text",
+    "time": "Kam",
+    "unread": 0
+  },
+  {
+    "id": "g1",
+    "type": "group",
+    "name": "Group IMK",
+    "avatar": "assets/avatars/group.png",
+    "participantIds": ["u1", "u2", "u3", "u4", "u5"],
+    "lastMessage": "Voice message",
+    "lastMessageType": "voice",
+    "time": "Kemarin",
+    "unread": 5
+  },
+  {
+    "id": "g2",
+    "type": "group",
+    "name": "Tim Proyek IMK",
+    "participantIds": ["u1", "u3", "u6"],
+    "lastMessage": "File sudah dibagikan.",
+    "lastMessageType": "text",
+    "time": "10.30",
+    "unread": 2
+  },
+  {
+    "id": "g3",
+    "type": "group",
+    "name": "Kelas B - Sore",
+    "participantIds": ["u2", "u4", "u7", "u8"],
+    "lastMessage": "Jangan lupa tugas besok!",
+    "lastMessageType": "text",
+    "time": "Semalam",
+    "unread": 7
+  }
+]
