@@ -1,7 +1,8 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
-import '../pages/launch1.dart';
-import '../pages/launch2.dart';
-import '../pages/launch3.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../pages/auth/login_page.dart';
 import '../pages/home.dart';
 import '../pages/chat_room.dart';
 import '../pages/group_chat_room.dart';
@@ -12,12 +13,33 @@ import '../pages/call_detail_page.dart';
 import '../pages/contact_detail_page.dart';
 import '../pages/group_detail_page.dart';
 
+class _AuthNotifier extends ChangeNotifier {
+  late final StreamSubscription<AuthState> _sub;
+  _AuthNotifier() {
+    _sub = Supabase.instance.client.auth.onAuthStateChange
+        .listen((_) => notifyListeners());
+  }
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
+  }
+}
+
+final _authNotifier = _AuthNotifier();
+
 final appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/login',
+  refreshListenable: _authNotifier,
+  redirect: (context, state) {
+    final isLoggedIn = Supabase.instance.client.auth.currentUser != null;
+    final goingToLogin = state.matchedLocation == '/login';
+    if (!isLoggedIn && !goingToLogin) return '/login';
+    if (isLoggedIn && goingToLogin) return '/home';
+    return null;
+  },
   routes: [
-    GoRoute(path: '/', builder: (ctx, state) => const Launch1Page()),
-    GoRoute(path: '/launch2', builder: (ctx, state) => const Launch2Page()),
-    GoRoute(path: '/launch3', builder: (ctx, state) => const Launch3Page()),
+    GoRoute(path: '/login', builder: (ctx, state) => const LoginPage()),
     GoRoute(path: '/home', builder: (ctx, state) => const HomePage()),
     GoRoute(
       path: '/chat/:chatId',
@@ -29,10 +51,16 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/call/:chatId',
-      builder: (ctx, state) => VideoCallPage(
-        chatId: state.pathParameters['chatId']!,
-        isVideo: state.uri.queryParameters['type'] != 'voice',
-      ),
+      builder: (ctx, state) {
+        final q = state.uri.queryParameters;
+        return VideoCallPage(
+          chatId: state.pathParameters['chatId']!,
+          isVideo: q['type'] != 'voice',
+          isCaller: q['mode'] != 'callee',
+          callRoomId: q['roomId'] ?? '',
+          remoteUserId: q['remoteUserId'] ?? '',
+        );
+      },
     ),
     GoRoute(
       path: '/group-call/:chatId',
@@ -51,10 +79,7 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/contact-detail/:userId',
-      builder: (ctx, state) => ContactDetailPage(
-        userId: state.pathParameters['userId']!,
-        chatId: state.uri.queryParameters['chatId'] ?? '',
-      ),
+      builder: (ctx, state) => ContactDetailPage(userId: state.pathParameters['userId']!),
     ),
     GoRoute(
       path: '/group-detail/:chatId',

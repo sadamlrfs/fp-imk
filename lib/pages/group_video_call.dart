@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'package:provider/provider.dart';
 import '../context/app_context.dart';
-import '../models/app_models.dart';
+import '../services/speech_service.dart';
+import '../services/translation_service.dart';
+import '../services/webrtc_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/avatar_widget.dart';
 
@@ -16,39 +20,97 @@ class GroupVideoCallPage extends StatefulWidget {
 }
 
 class _GroupVideoCallPageState extends State<GroupVideoCallPage> {
-  String _activeSpeakerId = 'u1';
-  int _scriptIndex = 0;
+  final _webrtc = WebRTCService();
   bool _micOn = true;
   bool _camOn = true;
   Timer? _timer;
+  Timer? _translateDebounce;
   int _elapsed = 0;
+  bool _initializing = true;
 
-  final _participants = ['u1', 'u2', 'u3', 'me'];
+  late SpeechService _speech;
+  late TranslationService _translator;
+  late TranslateLanguage _fallbackSource;
+  late String _localeId;
+
+  String _translatedEn = '';
+  String _translatedId = '';
+  String? _activeSpeakerId;
+
+  List<String> _participantIds = [];
 
   @override
   void initState() {
     super.initState();
+    final appCtx = context.read<AppContext>();
+    final myLang = appCtx.currentUser?.lang ?? 'id';
+    _fallbackSource =
+        myLang == 'en' ? TranslateLanguage.english : TranslateLanguage.indonesian;
+    _localeId = myLang == 'en' ? 'en_US' : 'id_ID';
+    _speech = context.read<SpeechService>();
+    _translator = context.read<TranslationService>();
+
+    final chat = appCtx.getChatById(widget.chatId);
+    _participantIds = List<String>.from(chat?.participantIds ?? []);
+    _activeSpeakerId = appCtx.currentUserId;
+
+    _initCall();
+  }
+
+  Future<void> _initCall() async {
+    await _webrtc.initialize(true);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _elapsed++);
-      if (_elapsed % 3 == 0) {
-        final ctx = context.read<AppContext>();
-        final scripts = ctx.scripts['group'] ?? [];
-        if (scripts.isNotEmpty) {
-          final nextIndex = (_scriptIndex + 1) % scripts.length;
-          final nextSpeaker = scripts[nextIndex].speakerId;
-          setState(() {
-            _scriptIndex = nextIndex;
-            _activeSpeakerId = nextSpeaker;
-          });
-        }
-      }
     });
+    await _speech.startContinuousListening(
+      localeId: _localeId,
+      onResult: (text, isFinal) {
+        if (!mounted || text.trim().isEmpty) return;
+        _scheduleTranslate(text);
+      },
+    );
+    if (mounted) setState(() => _initializing = false);
+  }
+
+  void _scheduleTranslate(String text) {
+    _translateDebounce?.cancel();
+    _translateDebounce = Timer(const Duration(milliseconds: 500), () async {
+      final result = await _translator.translateAuto(text, fallbackSource: _fallbackSource);
+      if (!mounted) return;
+      setState(() {
+        _translatedEn = result.textEn;
+        _translatedId = result.textId;
+      });
+    });
+  }
+
+  void _toggleMic() {
+    setState(() => _micOn = !_micOn);
+    _webrtc.setMicEnabled(_micOn);
+    if (!_micOn) {
+      _translateDebounce?.cancel();
+      _speech.stopContinuousListening();
+      setState(() { _translatedEn = ''; _translatedId = ''; });
+    } else {
+      _speech.startContinuousListening(localeId: _localeId, onResult: (t, _) {
+        if (!mounted || t.trim().isEmpty) return;
+        _scheduleTranslate(t);
+      });
+    }
+  }
+
+  void _toggleCam() {
+    setState(() => _camOn = !_camOn);
+    _webrtc.setCameraEnabled(_camOn);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _translateDebounce?.cancel();
+    _speech.stopContinuousListening();
+    _webrtc.dispose();
     super.dispose();
   }
 
@@ -61,241 +123,238 @@ class _GroupVideoCallPageState extends State<GroupVideoCallPage> {
   @override
   Widget build(BuildContext context) {
     final appCtx = context.watch<AppContext>();
-    final scripts = appCtx.scripts['group'] ?? [];
-    final currentScript = scripts.isNotEmpty ? scripts[_scriptIndex] : null;
+    final myId = appCtx.currentUserId ?? '';
+    final chat = appCtx.getChatById(widget.chatId);
+    final allIds = [myId, ...(_participantIds.where((id) => id != myId))].take(4).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F2F5),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => context.go('/group/${widget.chatId}'),
-                    child: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text('Group IMK', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                  ),
-                  Text(_timerLabel, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                ],
-              ),
-            ),
-            // 2x2 grid
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: _participants.map((uid) {
-                    final user = uid == 'me'
-                        ? appCtx.getUserById('me')
-                        : appCtx.getUserById(uid);
-                    final label = uid == 'me' ? 'You' : (user?.name ?? uid);
-                    return _ParticipantTile(
-                      name: label,
-                      isActive: uid == _activeSpeakerId,
-                      onTap: () => setState(() => _activeSpeakerId = uid),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-            // Translate panel
-            if (currentScript != null)
-              _TranslatePanel(
-                script: currentScript,
-                appCtx: appCtx,
-              ),
-            // Controls
-            _BottomControls(
-              micOn: _micOn,
-              camOn: _camOn,
-              onMicToggle: () => setState(() => _micOn = !_micOn),
-              onCamToggle: () => setState(() => _camOn = !_camOn),
-              onEnd: () => context.go('/group/${widget.chatId}'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ParticipantTile extends StatelessWidget {
-  final String name;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _ParticipantTile({required this.name, required this.isActive, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isActive ? Colors.green : Colors.transparent,
-            width: 3,
-          ),
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            AvatarWidget(name: name, radius: 36),
-            Positioned(
-              bottom: 10,
-              left: 10,
-              right: 10,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  AvatarWidget(name: name, radius: 10),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      name,
-                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (isActive)
-                    const Icon(Icons.mic, color: Colors.white, size: 14),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TranslatePanel extends StatelessWidget {
-  final TranslateScript script;
-  final AppContext appCtx;
-
-  const _TranslatePanel({required this.script, required this.appCtx});
-
-  @override
-  Widget build(BuildContext context) {
-    final speaker = appCtx.getUserById(script.speakerId);
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, -2))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: Colors.black,
+      body: Stack(
         children: [
-          Row(
-            children: [
-              AvatarWidget(name: speaker?.name ?? script.speakerName, radius: 14),
-              const SizedBox(width: 8),
-              Text(script.speakerName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Text('Bahasa Inggris', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 4),
-          Text(script.textEn, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
+          // 2×2 grid of participants
+          Positioned.fill(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Bahasa Indonesia', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary)),
-                const SizedBox(height: 4),
-                Text(script.textId, style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, height: 1.4)),
+                Expanded(
+                  child: GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      childAspectRatio: 0.75,
+                    ),
+                    itemCount: allIds.length,
+                    itemBuilder: (ctx, i) {
+                      final uid = allIds[i];
+                      final isMe = uid == myId;
+                      final isActive = uid == _activeSpeakerId;
+                      final user = appCtx.getUserById(uid);
+                      final name = isMe ? 'Saya' : (user?.name ?? 'Peserta');
+
+                      return GestureDetector(
+                        onTap: () => setState(() => _activeSpeakerId = uid),
+                        child: Container(
+                          margin: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF16213E),
+                            border: isActive
+                                ? Border.all(color: Colors.green, width: 2.5)
+                                : null,
+                          ),
+                          child: Stack(
+                            children: [
+                              // Self tile shows local WebRTC stream; others show avatar
+                              if (isMe && _webrtc.isInitialized)
+                                Positioned.fill(
+                                  child: RTCVideoView(
+                                    _webrtc.localRenderer,
+                                    mirror: true,
+                                    objectFit: RTCVideoViewObjectFit
+                                        .RTCVideoViewObjectFitCover,
+                                  ),
+                                )
+                              else
+                                Center(child: AvatarWidget(name: name, radius: 30)),
+
+                              // Name label
+                              Positioned(
+                                bottom: 8,
+                                left: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(name,
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 11)),
+                                ),
+                              ),
+
+                              // Mic indicator on active
+                              if (isActive && _micOn)
+                                const Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Icon(Icons.mic, color: Colors.green, size: 16),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
 
-class _BottomControls extends StatelessWidget {
-  final bool micOn;
-  final bool camOn;
-  final VoidCallback onMicToggle;
-  final VoidCallback onCamToggle;
-  final VoidCallback onEnd;
-
-  const _BottomControls({
-    required this.micOn,
-    required this.camOn,
-    required this.onMicToggle,
-    required this.onCamToggle,
-    required this.onEnd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(40, 12, 40, 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _Btn(icon: camOn ? Icons.videocam : Icons.videocam_off, onTap: onCamToggle),
-          _Btn(icon: micOn ? Icons.mic : Icons.mic_off, onTap: onMicToggle),
-          // End call pill
-          GestureDetector(
-            onTap: onEnd,
-            child: Container(
-              width: 72,
-              height: 52,
-              decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(26)),
-              child: const Icon(Icons.call_end, color: Colors.white, size: 26),
+          // Back button
+          Positioned(
+            top: 16,
+            left: 8,
+            child: SafeArea(
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => context.pop(),
+              ),
             ),
           ),
+
+          // Timer + group name
+          Positioned(
+            top: 24,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Center(
+                child: Column(
+                  children: [
+                    Text(chat?.name ?? 'Panggilan Grup',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text(_timerLabel,
+                        style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom controls + translate
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_micOn && (_translatedEn.isNotEmpty || _translatedId.isNotEmpty))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              const Icon(Icons.translate, color: AppColors.primary, size: 13),
+                              const SizedBox(width: 4),
+                              Text('Realtime Translate',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary)),
+                            ]),
+                            const SizedBox(height: 6),
+                            Text(_translatedEn.isEmpty ? '...' : _translatedEn,
+                                style: TextStyle(
+                                    fontSize: 11, color: AppColors.textSecondary)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(_translatedId.isEmpty ? '...' : _translatedId,
+                                  style: TextStyle(
+                                      fontSize: 11, color: AppColors.textPrimary)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(40, 0, 40, 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _ControlBtn(
+                          icon: _camOn ? Icons.videocam : Icons.videocam_off,
+                          onTap: _toggleCam,
+                          bg: Colors.white.withValues(alpha: 0.2),
+                        ),
+                        _ControlBtn(
+                          icon: _micOn ? Icons.mic : Icons.mic_off,
+                          onTap: _toggleMic,
+                          bg: Colors.white.withValues(alpha: 0.2),
+                        ),
+                        GestureDetector(
+                          onTap: () => context.pop(),
+                          child: Container(
+                            width: 64,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                            child: const Icon(Icons.call_end, color: Colors.white, size: 28),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (_initializing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.7),
+                child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _Btn extends StatelessWidget {
+class _ControlBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
-  const _Btn({required this.icon, this.onTap});
+  final Color bg;
+  const _ControlBtn({required this.icon, this.onTap, required this.bg});
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF0F2F5),
-          shape: BoxShape.circle,
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+          child: Icon(icon, color: Colors.white, size: 24),
         ),
-        child: Icon(icon, color: AppColors.primary, size: 24),
-      ),
-    );
-  }
+      );
 }

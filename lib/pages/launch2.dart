@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../widgets/chat_background.dart';
+import '../utils/app_colors.dart';
 
 class Launch2Page extends StatelessWidget {
   const Launch2Page({super.key});
@@ -66,7 +67,7 @@ class _DotIndicator extends StatelessWidget {
         width: i == current ? 24 : 8,
         height: 8,
         decoration: BoxDecoration(
-          color: i == current ? Colors.white : Colors.white.withValues(alpha: 0.4),
+          color: i == current ? AppColors.surface : AppColors.surface.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(4),
         ),
       )),

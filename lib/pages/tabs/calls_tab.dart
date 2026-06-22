@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../models/call_model.dart';
+import 'package:provider/provider.dart';
+import '../../context/app_context.dart';
+import '../../models/app_models.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
@@ -14,33 +16,20 @@ class CallsTab extends StatefulWidget {
 class _CallsTabState extends State<CallsTab> {
   int _filter = 0; // 0=Semua, 1=Tak Terjawab, 2=Video
 
-  List<CallModel> get _filtered {
-    switch (_filter) {
-      case 1:
-        return dummyCalls.where((c) => c.isMissed).toList();
-      case 2:
-        return dummyCalls.where((c) => c.isVideo).toList();
-      default:
-        return dummyCalls;
-    }
-  }
-
-  void _showNotifications(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => const _CallNotificationSheet(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final appCtx = context.watch<AppContext>();
+    final all = appCtx.calls;
+    final calls = all.where((c) {
+      if (_filter == 1) return c.direction == 'missed';
+      if (_filter == 2) return c.type == 'video';
+      return true;
+    }).toList();
+
     return Column(
       children: [
         Container(
-          color: Colors.white,
+          color: AppColors.surface,
           child: SafeArea(
             bottom: false,
             child: Column(
@@ -49,7 +38,7 @@ class _CallsTabState extends State<CallsTab> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
                   child: Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'Panggilan',
                           style: TextStyle(
@@ -60,17 +49,8 @@ class _CallsTabState extends State<CallsTab> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(
-                          Icons.search,
-                          color: AppColors.textSecondary,
-                        ),
-                        onPressed: () {},
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.notifications_outlined,
-                          color: AppColors.textSecondary,
-                        ),
+                        icon: Icon(Icons.notifications_outlined,
+                            color: AppColors.textSecondary),
                         onPressed: () => _showNotifications(context),
                       ),
                     ],
@@ -80,48 +60,112 @@ class _CallsTabState extends State<CallsTab> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      _FilterChip(
-                        label: 'Semua',
-                        selected: _filter == 0,
-                        onTap: () => setState(() => _filter = 0),
-                      ),
+                      _FilterChip(label: 'Semua',        selected: _filter == 0, onTap: () => setState(() => _filter = 0)),
                       const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Tak Terjawab',
-                        selected: _filter == 1,
-                        onTap: () => setState(() => _filter = 1),
-                      ),
+                      _FilterChip(label: 'Tak Terjawab', selected: _filter == 1, onTap: () => setState(() => _filter = 1)),
                       const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Video',
-                        selected: _filter == 2,
-                        onTap: () => setState(() => _filter = 2),
-                      ),
+                      _FilterChip(label: 'Video',        selected: _filter == 2, onTap: () => setState(() => _filter = 2)),
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(height: 1, color: AppColors.divider),
               ],
             ),
           ),
         ),
         Expanded(
-          child: _filtered.isEmpty
+          child: calls.isEmpty
               ? _EmptyState(filter: _filter)
               : ListView.separated(
                   padding: EdgeInsets.zero,
-                  itemCount: _filtered.length,
-                  separatorBuilder: (_, i) => const Divider(
-                    height: 1,
-                    indent: 76,
-                    color: AppColors.divider,
-                  ),
-                  itemBuilder: (_, i) => _CallTile(call: _filtered[i]),
+                  itemCount: calls.length,
+                  separatorBuilder: (_, i) => Divider(
+                      height: 1, indent: 72, color: AppColors.divider),
+                  itemBuilder: (_, i) => _CallTile(call: calls[i]),
                 ),
         ),
       ],
+    );
+  }
+
+  void _showNotifications(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => const _CallNotificationSheet(),
+    );
+  }
+}
+
+class _CallTile extends StatelessWidget {
+  final CallModel call;
+  const _CallTile({required this.call});
+
+  Future<void> _callBack(BuildContext context, bool video) async {
+    final router = GoRouter.of(context);
+    final appCtx = context.read<AppContext>();
+    if (call.contactId.isEmpty) return;
+    final chatId = await appCtx.getOrCreateDirectChat(call.contactId);
+    router.push(
+      '/call/$chatId?type=${video ? 'video' : 'voice'}&remoteUserId=${call.contactId}',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appCtx = context.read<AppContext>();
+    final name = appCtx.getUserById(call.contactId)?.name ?? 'Tidak dikenal';
+    final missed = call.direction == 'missed';
+    final outgoing = call.direction == 'outgoing';
+
+    final IconData dirIcon;
+    final Color dirColor;
+    if (missed) {
+      dirIcon = Icons.call_missed;
+      dirColor = Colors.red;
+    } else if (outgoing) {
+      dirIcon = Icons.call_made;
+      dirColor = Colors.green;
+    } else {
+      dirIcon = Icons.call_received;
+      dirColor = AppColors.primary;
+    }
+
+    final subtitleParts = <String>[
+      if (call.date.isNotEmpty) call.date,
+      if (call.time.isNotEmpty) call.time,
+      if (call.duration.isNotEmpty) call.duration,
+    ];
+
+    return ListTile(
+      leading: AvatarWidget(name: name, radius: 24),
+      title: Text(
+        name,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: missed ? Colors.red : AppColors.textPrimary,
+        ),
+      ),
+      subtitle: Row(
+        children: [
+          Icon(dirIcon, size: 14, color: dirColor),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              subtitleParts.join(' · '),
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      trailing: IconButton(
+        icon: Icon(call.type == 'video' ? Icons.videocam : Icons.call,
+            color: AppColors.primary),
+        onPressed: () => _callBack(context, call.type == 'video'),
+      ),
     );
   }
 }
@@ -130,11 +174,7 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+  const _FilterChip({required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -144,111 +184,14 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : const Color(0xFFF0F2F5),
+          color: selected ? AppColors.primary : AppColors.searchBg,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: selected ? Colors.white : AppColors.textSecondary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CallTile extends StatelessWidget {
-  final CallModel call;
-  const _CallTile({required this.call});
-
-  @override
-  Widget build(BuildContext context) {
-    final dirIcon = call.isMissed
-        ? Icons.call_missed
-        : call.isIncoming
-        ? Icons.call_received
-        : Icons.call_made;
-    final dirColor = call.isMissed ? Colors.red : AppColors.primary;
-
-    return InkWell(
-      onTap: () => context.push('/call-detail/${call.id}'),
-      child: Container(
-        color: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            AvatarWidget(name: call.contactName, radius: 26),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    call.contactName,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: call.isMissed ? Colors.red : AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Icon(dirIcon, size: 14, color: dirColor),
-                      const SizedBox(width: 4),
-                      Icon(
-                        call.isVideo ? Icons.videocam : Icons.call,
-                        size: 13,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${call.date} · ${call.time}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                GestureDetector(
-                  onTap: () {},
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      call.isVideo ? Icons.videocam : Icons.call,
-                      color: AppColors.primary,
-                      size: 18,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  call.duration.isEmpty ? 'Tak terjawab' : call.duration,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: call.isMissed ? Colors.red : AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: selected ? Colors.white : AppColors.textSecondary)),
       ),
     );
   }
@@ -271,20 +214,15 @@ class _EmptyState extends StatelessWidget {
               color: AppColors.primary.withValues(alpha: 0.08),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              filter == 2 ? Icons.videocam : Icons.call,
-              size: 48,
-              color: AppColors.primary.withValues(alpha: 0.4),
-            ),
+            child: Icon(filter == 2 ? Icons.videocam : Icons.call,
+                size: 48, color: AppColors.primary.withValues(alpha: 0.4)),
           ),
           const SizedBox(height: 16),
-          Text(
-            'Tidak ada ${labels[filter]}',
-            style: const TextStyle(
-              fontSize: 15,
-              color: AppColors.textSecondary,
-            ),
-          ),
+          Text('Tidak ada ${labels[filter]}',
+              style: TextStyle(fontSize: 15, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Text('Riwayat panggilan akan muncul di sini',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
         ],
       ),
     );
@@ -296,86 +234,52 @@ class _CallNotificationSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      (
-        Icons.call_missed,
-        'Rizal Hafiyyan',
-        'Panggilan tak terjawab',
-        '10 mnt lalu',
-      ),
-      (Icons.videocam, 'Erika', 'Mengajak video call', '30 mnt lalu'),
-      (Icons.call, 'James', 'Panggilan masuk terjawab', '2 jam lalu'),
-      (
-        Icons.notifications,
-        'Pengingat',
-        'Jadwal panggilan tim pukul 15.00',
-        'Hari ini',
-      ),
-    ];
-
+    final calls = context.watch<AppContext>().calls.where((c) => c.direction == 'missed').toList();
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 12),
         Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: Colors.grey[300],
-            borderRadius: BorderRadius.circular(2),
-          ),
+          width: 40, height: 4,
+          decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(height: 12),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              'Notifikasi Panggilan',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
+            child: Text('Notifikasi Panggilan',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
           ),
         ),
         const Divider(height: 24),
-        ...items.map(
-          (item) => ListTile(
-            leading: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(item.$1, color: AppColors.primary, size: 20),
-            ),
-            title: Text(
-              item.$2,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            subtitle: Text(
-              item.$3,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            trailing: Text(
-              item.$4,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.textSecondary,
-              ),
+        if (calls.isEmpty)
+          Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('Belum ada panggilan tak terjawab',
+                style: TextStyle(color: AppColors.textSecondary)),
+          )
+        else
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: calls.length,
+              itemBuilder: (ctx, i) {
+                final c = calls[i];
+                final name = ctx.read<AppContext>().getUserById(c.contactId)?.name ?? 'Tidak dikenal';
+                return ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0x14FF0000),
+                    child: Icon(Icons.call_missed, color: Colors.red, size: 20),
+                  ),
+                  title: Text(name, style: TextStyle(color: AppColors.textPrimary)),
+                  subtitle: Text('${c.date} ${c.time}',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                );
+              },
             ),
           ),
-        ),
         const SizedBox(height: 16),
       ],
     );

@@ -7,6 +7,7 @@ class ChatBubble extends StatelessWidget {
   final String time;
   final bool isMe;
   final String? senderName;
+  final String userLang;
 
   const ChatBubble({
     super.key,
@@ -15,10 +16,18 @@ class ChatBubble extends StatelessWidget {
     required this.time,
     required this.isMe,
     this.senderName,
+    this.userLang = 'id',
   });
 
   @override
   Widget build(BuildContext context) {
+    // Decide which text + label to show on top vs in blue translate box
+    final bool preferId = userLang != 'en';
+    final String topText    = preferId ? (textId ?? '') : (textEn ?? '');
+    final String bottomText = preferId ? (textEn ?? '') : (textId ?? '');
+    final String topLabel    = preferId ? 'Bahasa Indonesia' : 'Bahasa Inggris';
+    final String bottomLabel = preferId ? 'Bahasa Inggris'  : 'Bahasa Indonesia';
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -28,7 +37,7 @@ class ChatBubble extends StatelessWidget {
           bottom: 10,
         ),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 6, offset: const Offset(0, 2))],
         ),
@@ -41,23 +50,19 @@ class ChatBubble extends StatelessWidget {
                 Text(senderName!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primary)),
                 const SizedBox(height: 4),
               ],
-              if (!isMe) ...[
-                const Text('Bahasa Inggris', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                const SizedBox(height: 2),
-                Text(textEn ?? '', style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4)),
+              // User's language on top
+              Text(topLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 2),
+              Text(topText, style: TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4)),
+              // Translation in blue below
+              if (bottomText.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                _TranslateBox(label: 'Bahasa Indonesia', text: textId ?? ''),
-              ] else ...[
-                const Text('Bahasa Indonesia', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                const SizedBox(height: 2),
-                Text(textId ?? '', style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4)),
-                const SizedBox(height: 8),
-                _TranslateBox(label: 'Bahasa Inggris', text: textEn ?? ''),
+                _TranslateBox(label: bottomLabel, text: bottomText),
               ],
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerRight,
-                child: Text(time, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                child: Text(time, style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
               ),
             ],
           ),
@@ -78,15 +83,15 @@ class _TranslateBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFE8F0FE),
+        color: const Color(0xFFDCEEFB),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary)),
           const SizedBox(height: 2),
-          Text(text, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
+          Text(text, style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
         ],
       ),
     );

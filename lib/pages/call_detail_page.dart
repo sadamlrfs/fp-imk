@@ -8,7 +8,8 @@ class CallDetailPage extends StatelessWidget {
   final String callId;
   const CallDetailPage({super.key, required this.callId});
 
-  CallModel? get _call => dummyCalls.where((c) => c.id == callId).firstOrNull;
+  // No local call history — always null until real history is implemented
+  CallModel? get _call => null;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +27,7 @@ class CallDetailPage extends StatelessWidget {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.scaffoldBg,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -53,7 +54,7 @@ class CallDetailPage extends StatelessWidget {
                     AvatarWidget(name: call.contactName, radius: 48),
                     Container(
                       padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                      decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
                       child: Icon(
                         call.isVideo ? Icons.videocam : Icons.call,
                         color: AppColors.primary,
@@ -146,7 +147,7 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
+        color: AppColors.surface.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -169,7 +170,7 @@ class _InfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
@@ -194,12 +195,12 @@ class _InfoRow extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label, style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+              Text(label, style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
               Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: valueColor ?? AppColors.textPrimary)),
             ],
           ),
         ),
-        if (!isLast) const Divider(height: 1, indent: 16, color: AppColors.divider),
+        if (!isLast) Divider(height: 1, indent: 16, color: AppColors.divider),
       ],
     );
   }
@@ -219,7 +220,7 @@ class _ActionBtn extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: filled ? AppColors.primary : Colors.white,
+          color: filled ? AppColors.primary : AppColors.surface,
           borderRadius: BorderRadius.circular(14),
           border: filled ? null : Border.all(color: AppColors.divider),
           boxShadow: filled ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))] : null,

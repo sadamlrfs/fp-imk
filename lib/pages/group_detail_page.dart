@@ -20,20 +20,12 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
   late TextEditingController _nameCtrl;
   late TextEditingController _descCtrl;
 
-  static const _descriptions = {
-    'g1': 'Grup diskusi IMK — Interaksi Manusia Komputer. Tempat berbagi materi dan informasi perkuliahan.',
-    'g2': 'Tim pengembangan proyek IMK Semester Genap. Koordinasi sprint dan review desain.',
-    'g3': 'Kelas B — Sesi Sore, Semester 4. Info tugas, jadwal, dan pengumuman.',
-  };
-
   @override
   void initState() {
     super.initState();
     final chat = context.read<AppContext>().getChatById(widget.chatId);
     _nameCtrl = TextEditingController(text: chat?.name ?? '');
-    _descCtrl = TextEditingController(
-      text: _descriptions[widget.chatId] ?? 'Grup chat IMK Translate.',
-    );
+    _descCtrl = TextEditingController(text: '');
   }
 
   @override
@@ -60,8 +52,9 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
 
   void _showAddMember(BuildContext context, List<String> existingIds) {
     final appCtx = context.read<AppContext>();
+    final myId = appCtx.currentUserId ?? '';
     final available = appCtx.users
-        .where((u) => u.id != 'me' && !existingIds.contains(u.id))
+        .where((u) => u.id != myId && !existingIds.contains(u.id))
         .toList();
 
     if (available.isEmpty) {
@@ -85,7 +78,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
             decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 12),
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Align(
               alignment: Alignment.centerLeft,
@@ -105,16 +98,27 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                 style: const TextStyle(fontSize: 12),
               ),
               trailing: ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${u.name} ditambahkan ke grup'),
-                      backgroundColor: AppColors.primary,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  );
+                  try {
+                    await context.read<AppContext>().addMemberToGroup(widget.chatId, u.id);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${u.name} ditambahkan ke grup'),
+                          backgroundColor: AppColors.primary,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Gagal menambahkan: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -145,7 +149,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
         .toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.scaffoldBg,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -272,7 +276,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                             children: [
                               const Icon(Icons.people_outline, color: AppColors.primary, size: 20),
                               const SizedBox(width: 12),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Anggota Grup',
                                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.textPrimary),
@@ -286,7 +290,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                             ],
                           ),
                         ),
-                        const Divider(height: 1, indent: 16, endIndent: 16, color: AppColors.divider),
+                        Divider(height: 1, indent: 16, endIndent: 16, color: AppColors.divider),
                         // Self (me) first
                         _MemberTile(
                           name: ctx.currentUser?.name ?? 'Saya',
@@ -297,7 +301,7 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                         ...members.map((u) {
                           return Column(
                             children: [
-                              const Divider(height: 1, indent: 72, color: AppColors.divider),
+                              Divider(height: 1, indent: 72, color: AppColors.divider),
                               _MemberTile(
                                 name: u.name,
                                 lang: u.lang,
@@ -381,7 +385,7 @@ class _GroupAvatarHeader extends StatelessWidget {
                   height: 100,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: AppColors.surface.withValues(alpha: 0.2),
                     border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 3),
                   ),
                   child: Stack(
@@ -399,7 +403,7 @@ class _GroupAvatarHeader extends StatelessWidget {
                 if (isEditing)
                   Container(
                     padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
                     child: const Icon(Icons.camera_alt, color: AppColors.primary, size: 14),
                   ),
               ],
@@ -440,7 +444,7 @@ class _MemberTile extends StatelessWidget {
       leading: AvatarWidget(name: name, radius: 22),
       title: Row(
         children: [
-          Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.textPrimary)),
+          Text(name, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.textPrimary)),
           if (isMe) ...[
             const SizedBox(width: 6),
             Container(
@@ -458,7 +462,7 @@ class _MemberTile extends StatelessWidget {
         children: [
           Text(
             lang == 'en' ? '🇺🇸 English' : '🇮🇩 Indonesia',
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
           if (isAdmin && !isMe) ...[
             const SizedBox(width: 8),
@@ -485,7 +489,7 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
@@ -501,7 +505,7 @@ class _RowDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      const Divider(height: 1, indent: 56, endIndent: 16, color: AppColors.divider);
+      Divider(height: 1, indent: 56, endIndent: 16, color: AppColors.divider);
 }
 
 class _DetailRow extends StatelessWidget {
@@ -534,13 +538,13 @@ class _DetailRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text(label, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                 const SizedBox(height: 2),
                 if (isEditing && controller != null)
                   TextField(
                     controller: controller,
                     maxLines: maxLines,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 15, color: AppColors.textPrimary),
                     decoration: const InputDecoration(
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(vertical: 4),
@@ -553,7 +557,7 @@ class _DetailRow extends StatelessWidget {
                 else
                   Text(
                     value,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textPrimary, height: 1.4),
+                    style: TextStyle(fontSize: 15, color: AppColors.textPrimary, height: 1.4),
                   ),
               ],
             ),
@@ -589,7 +593,7 @@ class _ActionBtn extends StatelessWidget {
             child: Icon(icon, color: color, size: 22),
           ),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
+          Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
         ],
       ),
     );
@@ -618,10 +622,10 @@ class _DangerTile extends StatelessWidget {
         ListTile(
           leading: Icon(icon, color: color, size: 22),
           title: Text(label, style: TextStyle(fontSize: 15, color: color)),
-          trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
+          trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
           onTap: onTap,
         ),
-        if (showDivider) const Divider(height: 1, indent: 56, color: AppColors.divider),
+        if (showDivider) Divider(height: 1, indent: 56, color: AppColors.divider),
       ],
     );
   }

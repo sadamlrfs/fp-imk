@@ -17,7 +17,7 @@ class HelpPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.scaffoldBg,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -30,12 +30,12 @@ class HelpPage extends StatelessWidget {
           children: [
             // Search bar
             Container(
-              color: Colors.white,
+              color: AppColors.surface,
               padding: const EdgeInsets.all(16),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(color: const Color(0xFFF0F2F5), borderRadius: BorderRadius.circular(24)),
-                child: const Row(
+                decoration: BoxDecoration(color: AppColors.searchBg, borderRadius: BorderRadius.circular(24)),
+                child: Row(
                   children: [
                     Icon(Icons.search, color: AppColors.textSecondary, size: 18),
                     SizedBox(width: 8),
@@ -106,7 +106,7 @@ class HelpPage extends StatelessWidget {
               maxLines: 4,
               decoration: InputDecoration(
                 hintText: 'Jelaskan masalah yang kamu alami...',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.divider)),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary)),
               ),
             ),
@@ -154,7 +154,7 @@ class _FaqTileState extends State<_FaqTile> {
               children: [
                 const Icon(Icons.help_outline, color: AppColors.primary, size: 20),
                 const SizedBox(width: 12),
-                Expanded(child: Text(widget.question, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary))),
+                Expanded(child: Text(widget.question, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary))),
                 Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: AppColors.textSecondary, size: 20),
               ],
             ),
@@ -166,12 +166,12 @@ class _FaqTileState extends State<_FaqTile> {
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF0F2F5),
+              color: AppColors.searchBg,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(widget.answer, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+            child: Text(widget.answer, style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
           ),
-        if (!widget.isLast) const Divider(height: 1, indent: 16, color: AppColors.divider),
+        if (!widget.isLast) Divider(height: 1, indent: 16, color: AppColors.divider),
       ],
     );
   }

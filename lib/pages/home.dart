@@ -19,24 +19,145 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedTab = 0;
 
-  Future<void> _resetOnboarding() async {
+  @override
+  void initState() {
+    super.initState();
+    // Listen for incoming calls + in-app notification banners.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appCtx = context.read<AppContext>();
+      appCtx.incomingCallNotifier.addListener(_onIncomingCall);
+      appCtx.bannerNotifier.addListener(_onBanner);
+    });
+  }
+
+  @override
+  void dispose() {
     final appCtx = context.read<AppContext>();
-    final router = GoRouter.of(context);
-    await appCtx.resetAll();
-    router.go('/');
+    appCtx.incomingCallNotifier.removeListener(_onIncomingCall);
+    appCtx.bannerNotifier.removeListener(_onBanner);
+    super.dispose();
+  }
+
+  void _onBanner() {
+    if (!mounted) return;
+    final appCtx = context.read<AppContext>();
+    final n = appCtx.bannerNotifier.value;
+    if (n == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(n.title,
+              style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+          Text(n.body,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+        ],
+      ),
+      backgroundColor: const Color(0xFF1F2937),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+      action: n.chatId != null
+          ? SnackBarAction(
+              label: 'Buka',
+              textColor: Colors.white,
+              onPressed: () => context.push('/chat/${n.chatId}'),
+            )
+          : null,
+    ));
+  }
+
+  void _onIncomingCall() {
+    if (!mounted) return;
+    final incoming = context.read<AppContext>().incomingCallNotifier.value;
+    if (incoming != null) _showIncomingCallDialog(incoming);
+  }
+
+  void _showIncomingCallDialog(IncomingCallInfo incoming) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AvatarWidget(name: incoming.fromUserName, radius: 36),
+            const SizedBox(height: 12),
+            Text(incoming.fromUserName,
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            const SizedBox(height: 4),
+            Text(
+              incoming.callType == 'video' ? 'Panggilan Video Masuk' : 'Panggilan Suara Masuk',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Decline
+                GestureDetector(
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.read<AppContext>().declineCall(incoming);
+                  },
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                    child: const Icon(Icons.call_end, color: Colors.white, size: 28),
+                  ),
+                ),
+                // Accept
+                GestureDetector(
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final appCtx = context.read<AppContext>();
+                    final router = GoRouter.of(context);
+                    // Find or create a chat with the caller
+                    final chatId = await appCtx.getOrCreateDirectChat(incoming.fromUserId);
+                    appCtx.dismissIncomingCall();
+                    router.push(
+                      '/call/$chatId'
+                      '?type=${incoming.callType}'
+                      '&mode=callee'
+                      '&roomId=${incoming.roomId}'
+                      '&remoteUserId=${incoming.fromUserId}',
+                    );
+                  },
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: const BoxDecoration(
+                        color: Colors.green, shape: BoxShape.circle),
+                    child: const Icon(Icons.call, color: Colors.white, size: 28),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.scaffoldBg,
       body: IndexedStack(
         index: _selectedTab,
-        children: [
-          _MessagesTab(onReset: _resetOnboarding),
-          const ContactsTab(),
-          const CallsTab(),
-          const ProfileTab(),
+        children: const [
+          _MessagesTab(),
+          ContactsTab(),
+          CallsTab(),
+          ProfileTab(),
         ],
       ),
       bottomNavigationBar: _BottomNav(
@@ -48,8 +169,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _MessagesTab extends StatefulWidget {
-  final VoidCallback onReset;
-  const _MessagesTab({required this.onReset});
+  const _MessagesTab();
 
   @override
   State<_MessagesTab> createState() => _MessagesTabState();
@@ -62,9 +182,8 @@ class _MessagesTabState extends State<_MessagesTab> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() {
-      setState(() => _query = _searchController.text.toLowerCase());
-    });
+    _searchController.addListener(
+        () => setState(() => _query = _searchController.text.toLowerCase()));
   }
 
   @override
@@ -73,36 +192,59 @@ class _MessagesTabState extends State<_MessagesTab> {
     super.dispose();
   }
 
+  void _showCreateGroupSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => const _CreateGroupSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        _HomeHeader(onReset: widget.onReset, searchController: _searchController),
-        Expanded(child: _ChatList(query: _query)),
+        Column(
+          children: [
+            _HomeHeader(searchController: _searchController),
+            Expanded(child: _ChatList(query: _query)),
+          ],
+        ),
+        Positioned(
+          bottom: 16,
+          right: 16,
+          child: FloatingActionButton(
+            onPressed: _showCreateGroupSheet,
+            backgroundColor: AppColors.primary,
+            child: const Icon(Icons.group_add, color: Colors.white),
+          ),
+        ),
       ],
     );
   }
 }
 
 class _HomeHeader extends StatelessWidget {
-  final VoidCallback onReset;
   final TextEditingController searchController;
-  const _HomeHeader({required this.onReset, required this.searchController});
+  const _HomeHeader({required this.searchController});
 
   void _showNotifications(BuildContext context) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => const _NotificationSheet(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final me = context.watch<AppContext>().currentUser;
+
     return Container(
-      color: Colors.white,
+      color: AppColors.surface,
       child: SafeArea(
         bottom: false,
         child: Column(
@@ -111,18 +253,21 @@ class _HomeHeader extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               child: Row(
                 children: [
-                  const AvatarWidget(name: 'Sadam', radius: 20),
+                  AvatarWidget(name: me?.name ?? 'User', radius: 20),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Pesan',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary),
                     ),
                   ),
                   GestureDetector(
-                    onLongPress: onReset,
                     onTap: () => _showNotifications(context),
-                    child: const Icon(Icons.notifications_outlined, color: AppColors.textSecondary),
+                    child: Icon(Icons.notifications_outlined,
+                        color: AppColors.textSecondary),
                   ),
                 ],
               ),
@@ -137,14 +282,15 @@ class _HomeHeader extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.search, color: AppColors.textSecondary, size: 18),
+                    Icon(Icons.search, color: AppColors.textSecondary, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: searchController,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: 'Cari atau mulai chat',
-                          hintStyle: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                          hintStyle: TextStyle(
+                              color: AppColors.textSecondary, fontSize: 14),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,
@@ -153,10 +299,11 @@ class _HomeHeader extends StatelessWidget {
                     ),
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: searchController,
-                      builder: (context, value, _) => value.text.isNotEmpty
+                      builder: (context, value, child) => value.text.isNotEmpty
                           ? GestureDetector(
                               onTap: () => searchController.clear(),
-                              child: const Icon(Icons.clear, color: AppColors.textSecondary, size: 18),
+                              child: Icon(Icons.clear,
+                                  color: AppColors.textSecondary, size: 18),
                             )
                           : const SizedBox.shrink(),
                     ),
@@ -164,7 +311,7 @@ class _HomeHeader extends StatelessWidget {
                 ),
               ),
             ),
-            const Divider(height: 1, color: AppColors.divider),
+            Divider(height: 1, color: AppColors.divider),
           ],
         ),
       ),
@@ -180,7 +327,8 @@ class _ChatList extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctx = context.watch<AppContext>();
     if (!ctx.isLoaded) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.primary));
     }
 
     final chats = query.isEmpty
@@ -189,16 +337,27 @@ class _ChatList extends StatelessWidget {
             if (chat.type == 'group') {
               return (chat.name ?? '').toLowerCase().contains(query);
             } else {
-              final contact = ctx.getUserById(chat.participantIds.firstOrNull ?? '');
+              final contact =
+                  ctx.getUserById(chat.participantIds.firstOrNull ?? '');
               return (contact?.name ?? '').toLowerCase().contains(query);
             }
           }).toList();
 
     if (chats.isEmpty) {
       return Center(
-        child: Text(
-          query.isEmpty ? 'Belum ada percakapan' : 'Tidak ada hasil untuk "$query"',
-          style: const TextStyle(color: AppColors.textSecondary),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            Text(
+              query.isEmpty
+                  ? 'Belum ada percakapan\nMulai chat dari tab Kontak'
+                  : 'Tidak ada hasil untuk "$query"',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
         ),
       );
     }
@@ -206,7 +365,8 @@ class _ChatList extends StatelessWidget {
     return ListView.separated(
       padding: EdgeInsets.zero,
       itemCount: chats.length,
-      separatorBuilder: (_, i) => const Divider(height: 1, indent: 76, color: AppColors.divider),
+      separatorBuilder: (_, i) =>
+          Divider(height: 1, indent: 76, color: AppColors.divider),
       itemBuilder: (_, i) => _ChatTile(chat: chats[i]),
     );
   }
@@ -220,12 +380,14 @@ class _ChatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctx = context.read<AppContext>();
     final isGroup = chat.type == 'group';
-    final name = isGroup ? (chat.name ?? 'Group') : _getContactName(ctx, chat);
+    final name = isGroup ? (chat.name ?? 'Grup') : _contactName(ctx);
 
     return InkWell(
-      onTap: () => isGroup ? context.push('/group/${chat.id}') : context.push('/chat/${chat.id}'),
+      onTap: () => isGroup
+          ? context.push('/group/${chat.id}')
+          : context.push('/chat/${chat.id}'),
       child: Container(
-        color: Colors.white,
+        color: AppColors.surface,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
@@ -263,11 +425,16 @@ class _ChatTile extends StatelessWidget {
                       Expanded(
                         child: Text(
                           name,
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary),
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: AppColors.textPrimary),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      Text(chat.time, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                      Text(chat.time,
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textSecondary)),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -276,7 +443,8 @@ class _ChatTile extends StatelessWidget {
                       Expanded(
                         child: Text(
                           chat.lastMessage,
-                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                          style: TextStyle(
+                              fontSize: 13, color: AppColors.textSecondary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -284,11 +452,16 @@ class _ChatTile extends StatelessWidget {
                       if (chat.unread > 0) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: const BoxDecoration(
+                              color: AppColors.primary, shape: BoxShape.circle),
                           child: Text(
                             '${chat.unread}',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -303,26 +476,41 @@ class _ChatTile extends StatelessWidget {
     );
   }
 
-  String _getContactName(AppContext ctx, ChatModel chat) {
+  String _contactName(AppContext ctx) {
     if (chat.participantIds.isEmpty) return 'Unknown';
     final user = ctx.getUserById(chat.participantIds.first);
     return user?.name ?? 'Unknown';
   }
 }
 
-class _NotificationSheet extends StatelessWidget {
+class _NotificationSheet extends StatefulWidget {
   const _NotificationSheet();
 
   @override
-  Widget build(BuildContext context) {
-    const items = [
-      (Icons.chat_bubble, 'Rizal Hafiyyan', 'Mengirim pesan baru', '2 mnt lalu'),
-      (Icons.group, 'Group IMK', 'James: mengirim pesan suara', '5 mnt lalu'),
-      (Icons.videocam, 'Erika', 'Melewatkan panggilan video', '1 jam lalu'),
-      (Icons.person_add, 'Sarah', 'Ingin terhubung denganmu', '2 jam lalu'),
-      (Icons.notifications, 'Pengingat', 'Pertemuan grup pukul 14.00', 'Hari ini'),
-    ];
+  State<_NotificationSheet> createState() => _NotificationSheetState();
+}
 
+class _NotificationSheetState extends State<_NotificationSheet> {
+  @override
+  void initState() {
+    super.initState();
+    // Opening the sheet counts as seeing the notifications.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AppContext>().markAllNotificationsRead();
+    });
+  }
+
+  String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 1) return 'Baru saja';
+    if (d.inMinutes < 60) return '${d.inMinutes} mnt lalu';
+    if (d.inHours < 24) return '${d.inHours} jam lalu';
+    return '${d.inDays} hari lalu';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = context.watch<AppContext>().notifications;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -330,39 +518,82 @@ class _NotificationSheet extends StatelessWidget {
         Container(
           width: 40,
           height: 4,
-          decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+          decoration: BoxDecoration(
+              color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(height: 12),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Notifikasi',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-            ),
-          ),
-        ),
-        const Divider(height: 24),
-        ...items.map(
-          (item) => ListTile(
-            leading: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+          child: Row(
+            children: [
+              Text(
+                'Notifikasi',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary),
               ),
-              child: Icon(item.$1, color: AppColors.primary, size: 20),
-            ),
-            title: Text(
-              item.$2,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.textPrimary),
-            ),
-            subtitle: Text(item.$3, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-            trailing: Text(item.$4, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              const Spacer(),
+              if (items.isNotEmpty)
+                TextButton(
+                  onPressed: () {
+                    context.read<AppContext>().clearNotifications();
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Hapus semua'),
+                ),
+            ],
           ),
         ),
+        const Divider(height: 16),
+        if (items.isEmpty)
+          Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Belum ada notifikasi baru',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          )
+        else
+          ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.5),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: items.length,
+              separatorBuilder: (_, i) =>
+                  Divider(height: 1, indent: 64, color: AppColors.divider),
+              itemBuilder: (_, i) {
+                final n = items[i];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                    child: Icon(
+                      n.type == 'call' ? Icons.call : Icons.chat_bubble,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(n.title,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
+                  subtitle: Text(n.body,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  trailing: Text(_ago(n.time),
+                      style: TextStyle(
+                          fontSize: 11, color: AppColors.textSecondary)),
+                  onTap: n.chatId != null
+                      ? () {
+                          Navigator.pop(context);
+                          context.push('/chat/${n.chatId}');
+                        }
+                      : null,
+                );
+              },
+            ),
+          ),
         const SizedBox(height: 16),
       ],
     );
@@ -384,9 +615,12 @@ class _BottomNav extends StatelessWidget {
     ];
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, -2))],
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        boxShadow: [
+          BoxShadow(
+              color: Color(0x14000000), blurRadius: 12, offset: Offset(0, -2))
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -411,8 +645,10 @@ class _BottomNav extends StatelessWidget {
                       items[i].$3,
                       style: TextStyle(
                         fontSize: 10,
-                        color: isActive ? AppColors.primary : AppColors.textSecondary,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                        color:
+                            isActive ? AppColors.primary : AppColors.textSecondary,
+                        fontWeight:
+                            isActive ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
                   ],
@@ -420,6 +656,210 @@ class _BottomNav extends StatelessWidget {
               );
             }),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Create Group Sheet ─────────────────────────────────────
+
+class _CreateGroupSheet extends StatefulWidget {
+  const _CreateGroupSheet();
+
+  @override
+  State<_CreateGroupSheet> createState() => _CreateGroupSheetState();
+}
+
+class _CreateGroupSheetState extends State<_CreateGroupSheet> {
+  final _nameCtrl = TextEditingController();
+  final Set<String> _selected = {};
+  bool _creating = false;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama grup tidak boleh kosong')),
+      );
+      return;
+    }
+    if (_selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih minimal 1 anggota')),
+      );
+      return;
+    }
+    setState(() => _creating = true);
+    try {
+      final appCtx = context.read<AppContext>();
+      final router = GoRouter.of(context);
+      final chatId = await appCtx.createGroup(name, _selected.toList());
+      if (!mounted) return;
+      Navigator.pop(context);
+      router.push('/group/$chatId');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal membuat grup: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appCtx = context.watch<AppContext>();
+    final contacts = appCtx.contacts;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollCtrl) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        child: Column(
+          children: [
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                  color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Buat Grup Baru',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary)),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nameCtrl,
+              decoration: InputDecoration(
+                hintText: 'Nama Grup',
+                prefixIcon: const Icon(Icons.group, color: AppColors.primary),
+                filled: true,
+                fillColor: AppColors.searchBg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_selected.isNotEmpty)
+              SizedBox(
+                height: 36,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: _selected.map((id) {
+                    final u = appCtx.getUserById(id);
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Chip(
+                        label: Text(u?.name ?? id,
+                            style: const TextStyle(fontSize: 12, color: Colors.white)),
+                        backgroundColor: AppColors.primary,
+                        deleteIconColor: Colors.white,
+                        onDeleted: () => setState(() => _selected.remove(id)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            if (_selected.isNotEmpty) const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Pilih Anggota (${_selected.length})',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary)),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: contacts.isEmpty
+                  ? Center(
+                      child: Text('Belum ada kontak',
+                          style: TextStyle(color: AppColors.textSecondary)))
+                  : ListView.builder(
+                      controller: scrollCtrl,
+                      itemCount: contacts.length,
+                      itemBuilder: (_, i) {
+                        final u = contacts[i];
+                        final checked = _selected.contains(u.id);
+                        return ListTile(
+                          leading: AvatarWidget(name: u.name, radius: 20),
+                          title: Text(u.name,
+                              style: TextStyle(fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary)),
+                          subtitle: u.phone != null && u.phone!.isNotEmpty
+                              ? Text(u.phone!,
+                                  style: TextStyle(fontSize: 12,
+                                      color: AppColors.textSecondary))
+                              : null,
+                          trailing: Checkbox(
+                            value: checked,
+                            activeColor: AppColors.primary,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4)),
+                            onChanged: (_) => setState(() {
+                              if (checked) {
+                                _selected.remove(u.id);
+                              } else {
+                                _selected.add(u.id);
+                              }
+                            }),
+                          ),
+                          onTap: () => setState(() {
+                            if (checked) {
+                              _selected.remove(u.id);
+                            } else {
+                              _selected.add(u.id);
+                            }
+                          }),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        );
+                      },
+                    ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _creating ? null : _create,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _creating
+                        ? const SizedBox(width: 22, height: 22,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Text('Buat Grup',
+                            style: TextStyle(fontSize: 15,
+                                fontWeight: FontWeight.w600, color: Colors.white)),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

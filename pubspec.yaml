@@ -14,6 +14,24 @@ dependencies:
   provider: ^6.1.2
   shared_preferences: ^2.3.3
   just_audio: ^0.10.2
+  google_mlkit_translation: ^0.13.1
+  google_mlkit_language_id: ^0.13.1
+  speech_to_text: ^7.4.0
+  record: ^6.2.1
+  path_provider: ^2.1.5
+  # Backend & Auth
+  supabase_flutter: ^2.8.4
+  google_sign_in: ^6.2.2
+  # Video/Voice Calls
+  flutter_webrtc: ^0.12.3
+  # File Attachments
+  image_picker: ^1.1.2
+  file_picker: ^8.1.8
+  # Video playback
+  video_player: ^2.9.3
+  # UI helpers
+  cached_network_image: ^3.4.1
+  uuid: ^4.5.1
 
 dev_dependencies:
   flutter_test:
@@ -25,6 +43,4 @@ flutter:
 
   assets:
     - assets/
-    - assets/data/
     - assets/avatars/
-

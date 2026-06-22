@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../context/app_context.dart';
 import '../models/app_models.dart';
+import '../services/supabase_service.dart';
+import '../services/translation_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/chat_bubble.dart';
@@ -20,70 +23,172 @@ class GroupChatRoomPage extends StatefulWidget {
 
 class _GroupChatRoomPageState extends State<GroupChatRoomPage> {
   final _scrollCtrl = ScrollController();
+  final _supa = SupabaseService();
+  int _prevMsgCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppContext>().loadMessages(widget.chatId);
+    });
+  }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
       }
     });
   }
 
-  Future<void> _sendText(String text) async {
-    final appCtx = context.read<AppContext>();
+  String get _timeStr {
     final now = TimeOfDay.now();
-    final timeStr = '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
-    final msg = MessageModel(
-      id: 'm${DateTime.now().millisecondsSinceEpoch}',
-      senderId: 'me',
-      type: 'text',
-      textId: text,
-      textEn: text,
-      time: timeStr,
-    );
-    await appCtx.sendMessage(widget.chatId, msg);
-    _scrollToBottom();
+    return '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _sendVoice() async {
+  Future<void> _sendText(String text) async {
+    final translator = context.read<TranslationService>();
     final appCtx = context.read<AppContext>();
-    final now = TimeOfDay.now();
-    final timeStr = '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
-    final msg = MessageModel(
-      id: 'm${DateTime.now().millisecondsSinceEpoch}',
-      senderId: 'me',
-      type: 'voice',
-      durationLabel: '0:06',
-      textEn: 'I will join the meeting in 5 minutes.',
-      textId: 'Saya akan bergabung dalam 5 menit lagi.',
-      time: timeStr,
+    final result = await translator.translateAuto(text);
+
+    final localMsg = MessageModel(
+      id: const Uuid().v4(),
+      senderId: appCtx.currentUserId ?? '',
+      type: 'text',
+      textId: result.textId,
+      textEn: result.textEn,
+      time: _timeStr,
     );
-    await appCtx.sendMessage(widget.chatId, msg);
+    appCtx.addLocalMessage(widget.chatId, localMsg);
     _scrollToBottom();
+
+    await _supa.sendTextMessage(widget.chatId, result.textEn, result.textId);
+  }
+
+  Future<void> _sendVoice(VoiceRecordingResult recording) async {
+    final translator = context.read<TranslationService>();
+    final appCtx = context.read<AppContext>();
+
+    final transcript = recording.transcript.trim();
+    final result = transcript.isEmpty
+        ? TranslationResult(sourceLanguageCode: 'id', textEn: '', textId: '')
+        : await translator.translateAuto(transcript);
+
+    final noSpeech = '(tidak ada ucapan terdeteksi)';
+    final localMsg = MessageModel(
+      id: const Uuid().v4(),
+      senderId: appCtx.currentUserId ?? '',
+      type: 'voice',
+      audio: recording.filePath,
+      duration: recording.durationSeconds,
+      durationLabel: _fmtDuration(recording.durationSeconds),
+      textEn: transcript.isEmpty ? noSpeech : result.textEn,
+      textId: transcript.isEmpty ? noSpeech : result.textId,
+      time: _timeStr,
+    );
+    appCtx.addLocalMessage(widget.chatId, localMsg);
+    _scrollToBottom();
+
+    await _supa.sendVoiceMessage(
+      widget.chatId,
+      recording.filePath,
+      recording.durationSeconds,
+      transcript.isEmpty ? noSpeech : result.textEn,
+      transcript.isEmpty ? noSpeech : result.textId,
+    );
+  }
+
+  Future<void> _sendAttachment(AttachmentResult attachment) async {
+    final appCtx = context.read<AppContext>();
+    try {
+      if (attachment.type == 'image') {
+        final localMsg = MessageModel(
+          id: const Uuid().v4(),
+          senderId: appCtx.currentUserId ?? '',
+          type: 'image',
+          imageUrl: attachment.filePath,
+          time: _timeStr,
+        );
+        appCtx.addLocalMessage(widget.chatId, localMsg);
+        _scrollToBottom();
+        await _supa.sendImageMessage(widget.chatId, attachment.filePath);
+      } else if (attachment.type == 'video') {
+        final localMsg = MessageModel(
+          id: const Uuid().v4(),
+          senderId: appCtx.currentUserId ?? '',
+          type: 'video',
+          videoUrl: attachment.filePath,
+          durationLabel: '0:00',
+          time: _timeStr,
+        );
+        appCtx.addLocalMessage(widget.chatId, localMsg);
+        _scrollToBottom();
+        await _supa.sendVideoMessage(
+            widget.chatId, attachment.filePath, attachment.targetLang ?? 'id');
+      } else {
+        final localMsg = MessageModel(
+          id: const Uuid().v4(),
+          senderId: appCtx.currentUserId ?? '',
+          type: 'file',
+          fileName: attachment.fileName,
+          fileUrl: attachment.filePath,
+          time: _timeStr,
+        );
+        appCtx.addLocalMessage(widget.chatId, localMsg);
+        _scrollToBottom();
+        await _supa.sendFileMessage(
+            widget.chatId, attachment.filePath, attachment.fileName);
+      }
+    } catch (e) {
+      debugPrint('_sendAttachment error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengirim: ${e.toString().split('\n').first}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  String _fmtDuration(int sec) {
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
     final appCtx = context.watch<AppContext>();
     final chat = appCtx.getChatById(widget.chatId);
-    final groupName = chat?.name ?? 'Group';
-    final memberCount = chat?.participantIds.length ?? 0;
+    final myId = appCtx.currentUserId ?? '';
+    final groupName = chat?.name ?? 'Grup';
+    final memberCount = (chat?.participantIds.length ?? 0) + 1;
     final messages = appCtx.getMessages(widget.chatId);
+    final userLang = appCtx.currentUser?.lang ?? 'id';
+
+    if (messages.length > _prevMsgCount) {
+      _prevMsgCount = messages.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       body: Column(
         children: [
           _GroupAppBar(
             name: groupName,
             memberCount: memberCount,
-            members: chat?.participantIds ?? [],
-            appCtx: appCtx,
-            onVoiceCall: () => context.push('/call/${widget.chatId}?type=voice'),
-            onVideoCall: () => context.push('/group-call/${widget.chatId}'),
             onBack: () => context.pop(),
-            onTapInfo: () => context.push('/group-detail/${widget.chatId}'),
+            onGroupCall: () => context.push('/group-call/${widget.chatId}'),
+            onInfo: () => context.push('/group-detail/${widget.chatId}'),
           ),
           Expanded(
             child: ChatBackground(
@@ -91,111 +196,102 @@ class _GroupChatRoomPageState extends State<GroupChatRoomPage> {
                 controller: _scrollCtrl,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 itemCount: messages.length,
-                itemBuilder: (ctx, i) => _buildMessage(messages[i], appCtx),
+                itemBuilder: (ctx, i) => _buildMessage(messages[i], myId, appCtx, userLang),
               ),
             ),
           ),
           ChatInput(
             onSendText: _sendText,
             onSendVoice: _sendVoice,
-            onAttachVideo: () {},
+            onSendAttachment: _sendAttachment,
+            speechLocaleId: appCtx.currentUser?.lang == 'en' ? 'en_US' : 'id_ID',
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMessage(MessageModel msg, AppContext ctx) {
-    final isMe = msg.senderId == 'me';
-    final sender = ctx.getUserById(msg.senderId);
-    final senderName = isMe ? null : (sender?.name ?? 'Unknown');
+  Widget _buildMessage(MessageModel msg, String myId, AppContext appCtx, String userLang) {
+    final isMe = msg.senderId == myId;
+    final sender = appCtx.getUserById(msg.senderId);
+    final senderName = isMe ? null : sender?.name;
 
     if (msg.type == 'voice') {
-      return VoiceBubble(message: msg, isMe: isMe, senderName: senderName);
+      return VoiceBubble(message: msg, isMe: isMe, senderName: senderName, userLang: userLang);
     }
-    return ChatBubble(textId: msg.textId, textEn: msg.textEn, time: msg.time, isMe: isMe, senderName: senderName);
+    return ChatBubble(
+      textId: msg.textId,
+      textEn: msg.textEn,
+      time: msg.time,
+      isMe: isMe,
+      senderName: senderName,
+      userLang: userLang,
+    );
   }
 }
 
 class _GroupAppBar extends StatelessWidget {
   final String name;
   final int memberCount;
-  final List<String> members;
-  final AppContext appCtx;
-  final VoidCallback onVoiceCall;
-  final VoidCallback onVideoCall;
   final VoidCallback onBack;
-  final VoidCallback? onTapInfo;
+  final VoidCallback onGroupCall;
+  final VoidCallback onInfo;
 
   const _GroupAppBar({
     required this.name,
     required this.memberCount,
-    required this.members,
-    required this.appCtx,
-    required this.onVoiceCall,
-    required this.onVideoCall,
     required this.onBack,
-    this.onTapInfo,
+    required this.onGroupCall,
+    required this.onInfo,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.white,
+      color: AppColors.surface,
       child: SafeArea(
         bottom: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
           child: Row(
             children: [
-              IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary), onPressed: onBack),
+              IconButton(
+                icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+                onPressed: onBack,
+              ),
               Expanded(
                 child: GestureDetector(
-                  onTap: onTapInfo,
+                  onTap: onInfo,
                   behavior: HitTestBehavior.opaque,
                   child: Row(
                     children: [
-                      SizedBox(
-                        width: 52,
-                        height: 40,
-                        child: Stack(
-                          children: [
-                            for (int i = 0; i < members.length.clamp(0, 3); i++)
-                              Positioned(
-                                left: i * 14.0,
-                                child: AvatarWidget(
-                                  name: appCtx.getUserById(members[i])?.name ?? 'U',
-                                  radius: 16,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 4),
+                      AvatarWidget(name: name, radius: 20),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                            Text('$memberCount anggota', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                            Text(name,
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary)),
+                            Text('$memberCount anggota',
+                                style: TextStyle(
+                                    fontSize: 11, color: AppColors.textSecondary)),
                           ],
                         ),
                       ),
-                      if (onTapInfo != null)
-                        const Icon(Icons.keyboard_arrow_right, color: AppColors.textSecondary, size: 18),
+                      Icon(Icons.keyboard_arrow_right,
+                          color: AppColors.textSecondary, size: 18),
                     ],
                   ),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.call, color: AppColors.primary),
-                onPressed: onVoiceCall,
-                tooltip: 'Panggilan Suara',
-              ),
-              IconButton(
                 icon: const Icon(Icons.videocam, color: AppColors.primary),
-                onPressed: onVideoCall,
-                tooltip: 'Panggilan Video',
+                onPressed: onGroupCall,
+                tooltip: 'Panggilan Grup',
               ),
             ],
           ),

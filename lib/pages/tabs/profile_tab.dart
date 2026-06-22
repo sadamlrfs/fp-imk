@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../context/app_context.dart';
@@ -40,31 +41,91 @@ class ProfileTab extends StatelessWidget {
                   children: [
                     Stack(
                       children: [
-                        AvatarWidget(name: me?.name ?? 'Sadam', radius: 44),
+                        AvatarWidget(name: me?.name ?? 'User', radius: 44),
                         Positioned(
                           bottom: 0,
                           right: 0,
                           child: Container(
                             padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                            child: const Icon(Icons.camera_alt, color: AppColors.primary, size: 14),
+                            decoration: BoxDecoration(
+                                color: AppColors.surface, shape: BoxShape.circle),
+                            child: const Icon(Icons.camera_alt,
+                                color: AppColors.primary, size: 14),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Text(me?.name ?? 'Sadam', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text(
+                      me?.name ?? 'User',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 2),
-                    const Text('@sadam · 🇮🇩 Indonesia', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    Text(
+                      me?.lang == 'en' ? '🇺🇸 English' : '🇮🇩 Indonesia',
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    // Short user ID chip with copy button
+                    if (me != null) ...[
+                      Builder(builder: (context) {
+                        final shortId = me.id.substring(0, me.id.length.clamp(0, 8)).toUpperCase();
+                        return GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: shortId));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('ID "$shortId" disalin ke clipboard'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.tag, color: Colors.white70, size: 13),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'ID: $shortId',
+                                  style: const TextStyle(color: Colors.white, fontSize: 12, letterSpacing: 0.5),
+                                ),
+                                const SizedBox(width: 6),
+                                const Icon(Icons.copy, color: Colors.white54, size: 12),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      if (me.phone != null && me.phone!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          me.phone!,
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ],
+                    ],
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: () => _navigate(context, const AccountPage()),
                       icon: const Icon(Icons.edit, size: 16, color: Colors.white),
-                      label: const Text('Edit Profil', style: TextStyle(color: Colors.white, fontSize: 13)),
+                      label: const Text('Edit Profil',
+                          style: TextStyle(color: Colors.white, fontSize: 13)),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.white54),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 8),
                       ),
                     ),
                   ],
@@ -73,7 +134,6 @@ class ProfileTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          // Settings sections
           SettingsSection(
             title: 'Pengaturan Akun',
             children: [
@@ -141,9 +201,8 @@ class ProfileTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          // Logout
           Container(
-            color: Colors.white,
+            color: AppColors.surface,
             child: SettingsTile(
               icon: Icons.logout,
               iconColor: Colors.red,
@@ -166,11 +225,13 @@ class ProfileTab extends StatelessWidget {
         title: const Text('Keluar', style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('Apakah kamu yakin ingin keluar dari akun ini?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              context.go('/');
+              await context.read<AppContext>().signOut();
+              if (context.mounted) context.go('/login');
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Keluar', style: TextStyle(color: Colors.white)),

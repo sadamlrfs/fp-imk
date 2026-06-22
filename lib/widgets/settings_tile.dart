@@ -45,21 +45,21 @@ class SettingsTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
+                      Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
                       if (subtitle != null)
-                        Text(subtitle!, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        Text(subtitle!, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     ],
                   ),
                 ),
                 trailing ?? (onTap != null
-                    ? const Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20)
+                    ? Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20)
                     : const SizedBox()),
               ],
             ),
           ),
         ),
         if (showDivider)
-          const Divider(height: 1, indent: 70, color: AppColors.divider),
+          Divider(height: 1, indent: 70, color: AppColors.divider),
       ],
     );
   }
@@ -80,10 +80,10 @@ class SettingsSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
             child: Text(title!.toUpperCase(),
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.8)),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.8)),
           ),
         Container(
-          color: Colors.white,
+          color: AppColors.surface,
           child: Column(children: children),
         ),
       ],

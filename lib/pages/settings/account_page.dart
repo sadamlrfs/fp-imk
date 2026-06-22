@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../context/app_context.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/settings_tile.dart';
@@ -11,68 +15,177 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  final _nameCtrl = TextEditingController(text: 'Sadam');
-  final _emailCtrl = TextEditingController(text: 'sadam@example.com');
-  final _phoneCtrl = TextEditingController(text: '+62 812 3456 7890');
-  final _bioCtrl = TextEditingController(text: 'Tersedia untuk chat 😊');
+  late TextEditingController _nameCtrl;
+  late TextEditingController _bioCtrl;
+  late TextEditingController _phoneCtrl;
+  final TextEditingController _emailCtrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final me = context.read<AppContext>().currentUser;
+    _nameCtrl  = TextEditingController(text: me?.name  ?? '');
+    _bioCtrl   = TextEditingController(text: me?.bio   ?? '');
+    _phoneCtrl = TextEditingController(text: me?.phone ?? '');
+    _emailCtrl.text = Supabase.instance.client.auth.currentUser?.email ?? '';
+  }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _emailCtrl.dispose();
-    _phoneCtrl.dispose();
     _bioCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Nama tidak boleh kosong')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await context.read<AppContext>().saveMyProfile(
+        name: name,
+        bio: _bioCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Profil berhasil disimpan'),
+          backgroundColor: AppColors.primary,
+          behavior: SnackBarBehavior.floating,
+        ));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _pickAvatar() async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (file == null || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      await context.read<AppContext>().updateMyAvatar(file.path);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Foto profil diperbarui'),
+          backgroundColor: AppColors.primary,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal upload foto: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _showDeleteDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Hapus Akun',
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        content: const Text(
+            'Semua data kamu akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final me = context.watch<AppContext>().currentUser;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.scaffoldBg,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: const Text('Akun', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        title: const Text('Akun',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
         actions: [
-          TextButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Profil berhasil disimpan'), backgroundColor: AppColors.primary),
-              );
-              Navigator.pop(context);
-            },
-            child: const Text('Simpan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-          ),
+          if (_saving)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white)),
+              ),
+            )
+          else
+            TextButton(
+              onPressed: _save,
+              child: const Text('Simpan',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ),
         ],
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Avatar section
+            // Avatar
             Container(
               color: AppColors.primary,
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(0, 8, 0, 28),
               child: Column(
                 children: [
-                  Stack(
-                    children: [
-                      const AvatarWidget(name: 'Sadam', radius: 48),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                          child: const Icon(Icons.camera_alt, color: AppColors.primary, size: 14),
+                  GestureDetector(
+                    onTap: _pickAvatar,
+                    child: Stack(
+                      children: [
+                        AvatarWidget(name: me?.name ?? 'User', radius: 48),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                                color: AppColors.surface, shape: BoxShape.circle),
+                            child: const Icon(Icons.camera_alt,
+                                color: AppColors.primary, size: 14),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Ubah foto profil', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  const Text('Ubah foto profil',
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
                 ],
               ),
             ),
@@ -80,16 +193,34 @@ class _AccountPageState extends State<AccountPage> {
             SettingsSection(
               title: 'Info Profil',
               children: [
-                _EditField(label: 'Nama Tampilan', controller: _nameCtrl, icon: Icons.person_outline),
-                _EditField(label: 'Bio / Status', controller: _bioCtrl, icon: Icons.edit_note),
+                _EditField(
+                    label: 'Nama Tampilan',
+                    controller: _nameCtrl,
+                    icon: Icons.person_outline),
+                _EditField(
+                    label: 'Bio / Status',
+                    controller: _bioCtrl,
+                    icon: Icons.edit_note),
               ],
             ),
             const SizedBox(height: 12),
             SettingsSection(
               title: 'Kontak',
               children: [
-                _EditField(label: 'Nomor Telepon', controller: _phoneCtrl, icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
-                _EditField(label: 'Email', controller: _emailCtrl, icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress, isLast: true),
+                _EditField(
+                  label: 'Nomor Telepon',
+                  controller: _phoneCtrl,
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                ),
+                _EditField(
+                  label: 'Email',
+                  controller: _emailCtrl,
+                  icon: Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress,
+                  enabled: false,
+                  isLast: true,
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -111,25 +242,6 @@ class _AccountPageState extends State<AccountPage> {
       ),
     );
   }
-
-  void _showDeleteDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Hapus Akun', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-        content: const Text('Semua data kamu akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _EditField extends StatelessWidget {
@@ -138,6 +250,7 @@ class _EditField extends StatelessWidget {
   final IconData icon;
   final TextInputType keyboardType;
   final bool isLast;
+  final bool enabled;
 
   const _EditField({
     required this.label,
@@ -145,6 +258,7 @@ class _EditField extends StatelessWidget {
     required this.icon,
     this.keyboardType = TextInputType.text,
     this.isLast = false,
+    this.enabled = true,
   });
 
   @override
@@ -161,10 +275,12 @@ class _EditField extends StatelessWidget {
                 child: TextField(
                   controller: controller,
                   keyboardType: keyboardType,
-                  style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                  enabled: enabled,
+                  style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
                   decoration: InputDecoration(
                     labelText: label,
-                    labelStyle: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    labelStyle: TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   ),
@@ -173,7 +289,7 @@ class _EditField extends StatelessWidget {
             ],
           ),
         ),
-        if (!isLast) const Divider(height: 1, indent: 50, color: AppColors.divider),
+        if (!isLast) Divider(height: 1, indent: 50, color: AppColors.divider),
       ],
     );
   }

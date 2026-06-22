@@ -7,9 +7,8 @@ import '../widgets/avatar_widget.dart';
 
 class ContactDetailPage extends StatefulWidget {
   final String userId;
-  final String chatId;
 
-  const ContactDetailPage({super.key, required this.userId, this.chatId = ''});
+  const ContactDetailPage({super.key, required this.userId});
 
   @override
   State<ContactDetailPage> createState() => _ContactDetailPageState();
@@ -20,36 +19,12 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
   late TextEditingController _nameCtrl;
   late TextEditingController _aboutCtrl;
 
-  static const _phones = {
-    'u1': '+1 (555) 123-4567',
-    'u2': '+1 (555) 234-5678',
-    'u3': '+1 (555) 345-6789',
-    'u4': '+81 90-1234-5678',
-    'u5': '+1 (555) 456-7890',
-    'u6': '+1 (555) 567-8901',
-    'u7': '+1 (555) 678-9012',
-    'u8': '+62 812-3456-7890',
-  };
-
-  static const _abouts = {
-    'u1': 'Always exploring new technologies!',
-    'u2': "Let's create something amazing together.",
-    'u3': 'Work hard, travel harder.',
-    'u4': 'Passionate about design and UX.',
-    'u5': 'Code is poetry.',
-    'u6': 'Learning never stops.',
-    'u7': 'Turning ideas into reality.',
-    'u8': 'Hei! Saya menggunakan IMK Translate.',
-  };
-
   @override
   void initState() {
     super.initState();
     final user = context.read<AppContext>().getUserById(widget.userId);
     _nameCtrl = TextEditingController(text: user?.name ?? '');
-    _aboutCtrl = TextEditingController(
-      text: _abouts[widget.userId] ?? 'Hey there! I am using IMK Translate.',
-    );
+    _aboutCtrl = TextEditingController(text: user?.bio ?? '');
   }
 
   @override
@@ -63,6 +38,8 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
     context.read<AppContext>().updateUserName(widget.userId, name);
+    final bio = _aboutCtrl.text.trim();
+    if (bio.isNotEmpty) context.read<AppContext>().updateUserBio(widget.userId, bio);
     setState(() => _isEditing = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -74,6 +51,24 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
     );
   }
 
+  Future<String> _ensureChat() =>
+      context.read<AppContext>().getOrCreateDirectChat(widget.userId);
+
+  Future<void> _openChat() async {
+    final chatId = await _ensureChat();
+    if (mounted) context.push('/chat/$chatId');
+  }
+
+  Future<void> _voiceCall() async {
+    final chatId = await _ensureChat();
+    if (mounted) context.push('/call/$chatId?type=voice&remoteUserId=${widget.userId}');
+  }
+
+  Future<void> _videoCall() async {
+    final chatId = await _ensureChat();
+    if (mounted) context.push('/call/$chatId?remoteUserId=${widget.userId}');
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctx = context.watch<AppContext>();
@@ -81,10 +76,10 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
     final name = user?.name ?? _nameCtrl.text;
     final isEn = user?.lang == 'en';
     final langLabel = isEn ? 'English 🇺🇸' : 'Indonesia 🇮🇩';
-    final phone = _phones[widget.userId] ?? '+62 812-0000-0000';
+    final phone = user?.phone ?? 'Belum diatur';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.scaffoldBg,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -143,25 +138,19 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
                             icon: Icons.chat_bubble_outline,
                             label: 'Pesan',
                             color: AppColors.primary,
-                            onTap: widget.chatId.isNotEmpty
-                                ? () => context.push('/chat/${widget.chatId}')
-                                : null,
+                            onTap: _openChat,
                           ),
                           _ActionBtn(
                             icon: Icons.call,
                             label: 'Panggil',
                             color: const Color(0xFF0E9F6E),
-                            onTap: widget.chatId.isNotEmpty
-                                ? () => context.push('/call/${widget.chatId}?type=voice')
-                                : null,
+                            onTap: _voiceCall,
                           ),
                           _ActionBtn(
                             icon: Icons.videocam,
                             label: 'Video',
                             color: const Color(0xFF7E3AF2),
-                            onTap: widget.chatId.isNotEmpty
-                                ? () => context.push('/call/${widget.chatId}')
-                                : null,
+                            onTap: _videoCall,
                           ),
                           _ActionBtn(
                             icon: Icons.notifications_outlined,
@@ -190,7 +179,7 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
                         _DetailRow(
                           icon: Icons.info_outline,
                           label: 'Tentang',
-                          value: _aboutCtrl.text,
+                          value: _aboutCtrl.text.isEmpty ? 'Belum ada tentang' : _aboutCtrl.text,
                           isEditing: _isEditing,
                           controller: _aboutCtrl,
                         ),
@@ -221,7 +210,7 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
                             children: [
                               const Icon(Icons.perm_media_outlined, color: AppColors.primary, size: 20),
                               const SizedBox(width: 12),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Media & File',
                                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppColors.textPrimary),
@@ -234,7 +223,7 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
                             ],
                           ),
                         ),
-                        const Divider(height: 1, indent: 16, endIndent: 16, color: AppColors.divider),
+                        Divider(height: 1, indent: 16, endIndent: 16, color: AppColors.divider),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                           child: Row(
@@ -252,7 +241,7 @@ class _ContactDetailPageState extends State<ContactDetailPage> {
                                   color: Colors.grey[100],
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const Center(
+                                child: Center(
                                   child: Text('+5', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 15)),
                                 ),
                               ),
@@ -332,7 +321,7 @@ class _AvatarHeader extends StatelessWidget {
                 if (isEditing)
                   Container(
                     padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
                     child: const Icon(Icons.camera_alt, color: AppColors.primary, size: 14),
                   ),
               ],
@@ -356,7 +345,7 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
@@ -372,7 +361,7 @@ class _RowDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      const Divider(height: 1, indent: 56, endIndent: 16, color: AppColors.divider);
+      Divider(height: 1, indent: 56, endIndent: 16, color: AppColors.divider);
 }
 
 class _DetailRow extends StatelessWidget {
@@ -403,12 +392,12 @@ class _DetailRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text(label, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                 const SizedBox(height: 2),
                 if (isEditing && controller != null)
                   TextField(
                     controller: controller,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 15, color: AppColors.textPrimary),
                     decoration: const InputDecoration(
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(vertical: 4),
@@ -419,7 +408,7 @@ class _DetailRow extends StatelessWidget {
                     ),
                   )
                 else
-                  Text(value, style: const TextStyle(fontSize: 15, color: AppColors.textPrimary)),
+                  Text(value, style: TextStyle(fontSize: 15, color: AppColors.textPrimary)),
               ],
             ),
           ),
@@ -506,10 +495,10 @@ class _DangerTile extends StatelessWidget {
         ListTile(
           leading: Icon(icon, color: color, size: 22),
           title: Text(label, style: TextStyle(fontSize: 15, color: color)),
-          trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
+          trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
           onTap: onTap,
         ),
-        if (showDivider) const Divider(height: 1, indent: 56, color: AppColors.divider),
+        if (showDivider) Divider(height: 1, indent: 56, color: AppColors.divider),
       ],
     );
   }

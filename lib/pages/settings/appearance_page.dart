@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../context/theme_controller.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/settings_tile.dart';
 
@@ -10,20 +13,42 @@ class AppearancePage extends StatefulWidget {
 }
 
 class _AppearancePageState extends State<AppearancePage> {
-  String _theme = 'Terang';
-  double _fontSize = 14;
-  String _wallpaper = 'Pola Gelombang (Default)';
-  bool _bubbleTranslation = true;
-  String _bubbleStyle = 'Kartu Putih';
+  String _theme             = 'Terang';
+  double _fontSize          = 14;
+  String _wallpaper         = 'Pola Gelombang (Default)';
+  bool   _bubbleTranslation = true;
+  String _bubbleStyle       = 'Kartu Putih';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _theme             = p.getString('app_theme')              ?? 'Terang';
+      _fontSize          = p.getDouble('app_font_size')          ?? 14;
+      _wallpaper         = p.getString('app_wallpaper')          ?? 'Pola Gelombang (Default)';
+      _bubbleTranslation = p.getBool('app_bubble_translation')   ?? true;
+      _bubbleStyle       = p.getString('app_bubble_style')       ?? 'Kartu Putih';
+    });
+  }
+
+  Future<void> _setS(String k, String v)  async => (await SharedPreferences.getInstance()).setString(k, v);
+  Future<void> _setB(String k, bool v)    async => (await SharedPreferences.getInstance()).setBool(k, v);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppColors.scaffoldBg,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: const Text('Tampilan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        title: const Text('Tampilan',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
@@ -39,23 +64,33 @@ class _AppearancePageState extends State<AppearancePage> {
                   child: Row(
                     children: ['Terang', 'Gelap', 'Sistem'].map((t) => Expanded(
                       child: GestureDetector(
-                        onTap: () => setState(() => _theme = t),
+                        onTap: () {
+                          setState(() => _theme = t);
+                          // Drives MaterialApp.themeMode + persists.
+                          context.read<ThemeController>().setThemeLabel(t);
+                        },
                         child: Container(
                           margin: const EdgeInsets.symmetric(horizontal: 4),
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           decoration: BoxDecoration(
-                            color: _theme == t ? AppColors.primary : const Color(0xFFF0F2F5),
+                            color: _theme == t ? AppColors.primary : AppColors.searchBg,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Column(
                             children: [
                               Icon(
-                                t == 'Terang' ? Icons.light_mode : t == 'Gelap' ? Icons.dark_mode : Icons.phone_android,
+                                t == 'Terang' ? Icons.light_mode
+                                    : t == 'Gelap' ? Icons.dark_mode
+                                    : Icons.phone_android,
                                 color: _theme == t ? Colors.white : AppColors.textSecondary,
                                 size: 20,
                               ),
                               const SizedBox(height: 4),
-                              Text(t, style: TextStyle(fontSize: 11, color: _theme == t ? Colors.white : AppColors.textSecondary, fontWeight: FontWeight.w500)),
+                              Text(t,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: _theme == t ? Colors.white : AppColors.textSecondary,
+                                      fontWeight: FontWeight.w500)),
                             ],
                           ),
                         ),
@@ -78,25 +113,29 @@ class _AppearancePageState extends State<AppearancePage> {
                         children: [
                           const Icon(Icons.text_fields, color: AppColors.primary, size: 18),
                           const SizedBox(width: 10),
-                          Text('Preview teks dengan ukuran ${_fontSize.toInt()}px',
-                              style: TextStyle(fontSize: _fontSize, color: AppColors.textPrimary)),
+                          Text(
+                            'Preview teks dengan ukuran ${_fontSize.toInt()}px',
+                            style: TextStyle(fontSize: _fontSize, color: AppColors.textPrimary),
+                          ),
                         ],
                       ),
                       Slider(
                         value: _fontSize,
-                        min: 12,
-                        max: 20,
-                        divisions: 4,
+                        min: 12, max: 20, divisions: 4,
                         label: '${_fontSize.toInt()}px',
                         activeColor: AppColors.primary,
-                        onChanged: (v) => setState(() => _fontSize = v),
+                        onChanged: (v) {
+                          setState(() => _fontSize = v);
+                          // Drives MediaQuery text scaling globally + persists.
+                          context.read<ThemeController>().setFontSize(v);
+                        },
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: const [
-                          Text('Kecil', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                        children: [
+                          Text('Kecil',  style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                           Text('Sedang', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                          Text('Besar', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                          Text('Besar',  style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                         ],
                       ),
                     ],
@@ -126,7 +165,14 @@ class _AppearancePageState extends State<AppearancePage> {
                   iconColor: const Color(0xFF0694A2),
                   title: 'Tampilkan Terjemahan di Bubble',
                   subtitle: 'Selalu tampilkan EN dan ID di bubble pesan',
-                  trailing: Switch(value: _bubbleTranslation, onChanged: (v) => setState(() => _bubbleTranslation = v), activeThumbColor: AppColors.primary),
+                  trailing: Switch(
+                    value: _bubbleTranslation,
+                    onChanged: (v) {
+                      setState(() => _bubbleTranslation = v);
+                      _setB('app_bubble_translation', v);
+                    },
+                    activeThumbColor: AppColors.primary,
+                  ),
                   showDivider: false,
                 ),
               ],
@@ -139,30 +185,52 @@ class _AppearancePageState extends State<AppearancePage> {
   }
 
   void _pickWallpaper(BuildContext context) {
-    final wallpapers = ['Pola Gelombang (Default)', 'Biru Polos', 'Gradien Biru-Ungu', 'Putih Bersih', 'Gelap'];
+    final wallpapers = [
+      'Pola Gelombang (Default)',
+      'Biru Polos',
+      'Gradien Biru-Ungu',
+      'Putih Bersih',
+      'Gelap',
+    ];
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Wallpaper Chat', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Wallpaper Chat',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             ...wallpapers.map((w) => InkWell(
-              onTap: () { setState(() => _wallpaper = w); Navigator.pop(ctx); },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(children: [
-                  Icon(_wallpaper == w ? Icons.radio_button_checked : Icons.radio_button_off,
-                      color: _wallpaper == w ? AppColors.primary : AppColors.textSecondary),
-                  const SizedBox(width: 12),
-                  Text(w, style: TextStyle(fontSize: 14, color: _wallpaper == w ? AppColors.primary : AppColors.textPrimary)),
-                ]),
-              ),
-            )),
+                  onTap: () {
+                    setState(() => _wallpaper = w);
+                    _setS('app_wallpaper', w);
+                    Navigator.pop(ctx);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(children: [
+                      Icon(
+                          _wallpaper == w
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          color: _wallpaper == w
+                              ? AppColors.primary
+                              : AppColors.textSecondary),
+                      const SizedBox(width: 12),
+                      Text(w,
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: _wallpaper == w
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary)),
+                    ]),
+                  ),
+                )),
           ],
         ),
       ),
@@ -173,27 +241,43 @@ class _AppearancePageState extends State<AppearancePage> {
     final styles = ['Kartu Putih', 'Warna (Biru/Abu)', 'Minimalis'];
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Gaya Bubble', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Gaya Bubble',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             ...styles.map((s) => InkWell(
-              onTap: () { setState(() => _bubbleStyle = s); Navigator.pop(ctx); },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(children: [
-                  Icon(_bubbleStyle == s ? Icons.radio_button_checked : Icons.radio_button_off,
-                      color: _bubbleStyle == s ? AppColors.primary : AppColors.textSecondary),
-                  const SizedBox(width: 12),
-                  Text(s, style: TextStyle(fontSize: 14, color: _bubbleStyle == s ? AppColors.primary : AppColors.textPrimary)),
-                ]),
-              ),
-            )),
+                  onTap: () {
+                    setState(() => _bubbleStyle = s);
+                    _setS('app_bubble_style', s);
+                    Navigator.pop(ctx);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(children: [
+                      Icon(
+                          _bubbleStyle == s
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          color: _bubbleStyle == s
+                              ? AppColors.primary
+                              : AppColors.textSecondary),
+                      const SizedBox(width: 12),
+                      Text(s,
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: _bubbleStyle == s
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary)),
+                    ]),
+                  ),
+                )),
           ],
         ),
       ),
